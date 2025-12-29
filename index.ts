@@ -9,43 +9,27 @@ import http from "http";
 import ws from "ws";
 
 import { auth, authToCookie, verifyEnv } from "./src/util/middlewares";
-import {
-  connectToRedis,
-  getNewRedisClient,
-  getRedisClient,
-} from "./src/util/redis";
+import { connectToRedis, getNewRedisClient, getRedisClient } from "./src/util/redis";
 import { connectToDatabase, getClient } from "./src/util/db";
 import router from "./src/routes";
-import {
-  syncData,
-  syncLeaderboardFromCF,
-} from "./src/util/functions";
+import { syncData, syncLeaderboardFromCF } from "./src/util/functions";
 
-/* =======================
-   CONFIG
-======================= */
-
-const PORT = Number(process.env.PORT) || 3001;
+const app = express();
+// Render sets process.env.PORT automatically. Do not hardcode 3001 in Render Dashboard.
+const PORT = process.env.PORT || 3001;
 
 const corsOptions = {
   origin: [
     "http://localhost:3000",
     "http://localhost:3001",
     "https://clash-of-codes2026.vercel.app",
-    "https://clash-of-codes-api-0p6t.onrender.com",
   ],
   credentials: true,
-  optionSuccessStatus: 200,
+  optionsSuccessStatus: 200
 };
 
-/* =======================
-   APP SETUP
-======================= */
-
-const app = express();
-const server = http.createServer(app);
-const wss = new ws.Server({ server });
-
+// 1. GLOBAL MIDDLEWARE
+// Always put CORS first so it handles OPTIONS requests before Auth kicks in
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
@@ -53,91 +37,65 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-/* =======================
-   AUTH MIDDLEWARES
-======================= */
-
-// Make sure these DO NOT block OPTIONS requests internally
+// 2. AUTH & ROUTES
 app.use(authToCookie);
-app.use(auth);
 
-/* =======================
-   ROUTES
-======================= */
+// Be careful: If 'auth' blocks requests without tokens, 
+// it will also block the frontend from reaching 'router'
+app.use(auth);
 
 app.post("/logout", (req, res) => {
   res.clearCookie("server_token", {
     httpOnly: true,
     secure: true,
-    sameSite: "strict",
-    path: "/",
+    sameSite: "none", 
+    path: "/"
   });
-
-  res.clearCookie("google_token", {
+  res.clearCookie("google_token",{
     httpOnly: true,
     secure: true,
-    sameSite: "strict",
-    path: "/",
+    sameSite: "none", 
+    path: "/"
   });
-
   res.status(200).json({ success: true });
 });
 
 app.use("/", router);
 
-/* =======================
-   REDIS + WEBSOCKETS
-======================= */
+// 3. SERVER & WEBSOCKETS
+const server = http.createServer(app);
+const wss = new ws.Server({ server });
 
-const redisSubscriber = getNewRedisClient();
+// 4. DATABASE & REDIS STARTUP
+// We start the server immediately so Render detects the open port,
+// then we handle the connections.
+server.listen(PORT, async () => {
+  console.log(`🚀 Server binding successful on port ${PORT}`);
 
-(async () => {
-  await redisSubscriber.connect();
-  await redisSubscriber.subscribe("configHash", async () => {
-    await syncData();
-  });
-})();
+  try {
+    await connectToDatabase();
+    await connectToRedis();
+    verifyEnv();
 
-wss.on("connection", async (socket) => {
-  console.log("WebSocket connected");
+    const redisClient2 = getNewRedisClient();
+    await redisClient2.connect();
 
-  const cachedData = await getRedisClient().get("leaderboard");
-  if (cachedData) socket.send(cachedData);
+    redisClient2.subscribe("configHash", async () => {
+      await syncData();
+    });
 
-  redisSubscriber.subscribe("live", (message) => {
-    socket.send(message);
-  });
+    wss.on("connection", async (socket) => {
+      const cachedData = await getRedisClient().get("leaderboard");
+      if (cachedData) socket.send(cachedData);
 
-  socket.on("close", () => {
-    console.log("WebSocket disconnected");
-  });
-});
+      redisClient2.subscribe("live", (message) => {
+        socket.send(message);
+      });
+    });
 
-/* =======================
-   STARTUP SEQUENCE
-======================= */
-
-const client = getClient();
-
-client.on("open", async () => {
-  verifyEnv();
-
-  setInterval(async () => {
-    await syncLeaderboardFromCF();
-  }, 13000);
-
-  server.listen(PORT, () => {
-    console.log(`🚀 API running on port ${PORT}`);
-  });
-});
-
-/* =======================
-   GRACEFUL SHUTDOWN
-======================= */
-
-process.on("SIGTERM", async () => {
-  console.log("SIGTERM received. Shutting down...");
-  await redisSubscriber.quit();
-  await client.close();
-  process.exit(0);
+    setInterval(syncLeaderboardFromCF, 13000);
+    console.log("✅ All systems connected (DB, Redis, WS)");
+  } catch (err) {
+    console.error("❌ Startup Error:", err);
+  }
 });
