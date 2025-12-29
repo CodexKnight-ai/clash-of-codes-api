@@ -28,8 +28,8 @@ const corsOptions = {
 	origin: [
 		"http://localhost:3000",
 		"http://localhost:3001",
-		"https://clash-of-codes-five.vercel.app",
-		"https://clash-of-codes-api-pwiz.onrender.com",
+		"https://clash-of-codes2026.vercel.app",
+		"https://clash-of-codes-api-0p6t.onrender.com",
 	],
 	credentials: true, //access-control-allow-credentials:true
 	optionSuccessStatus: 200,
