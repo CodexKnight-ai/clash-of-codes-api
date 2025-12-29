@@ -22,7 +22,6 @@ import {
 	syncLeaderboardFromCF,
 } from "./src/util/functions";
 
-const app = express();
 const port = 3001;
 const corsOptions = {
 	origin: [
@@ -35,14 +34,27 @@ const corsOptions = {
 	optionSuccessStatus: 200,
 };
 
-//  middleware
+const app = express();
+
+// 1. Move CORS to the very top
 app.use(cors(corsOptions));
-connectToDatabase();
-connectToRedis();
-app.use(authToCookie);
+
+// 2. Explicitly handle Preflight requests for all routes
+app.options("*", cors(corsOptions));
+
+// 3. Body parsers (needed before auth if auth checks body)
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+// 4. Cookies
 app.use(cookieParser());
 
+// 5. Custom Middlewares (ensure these don't block OPTIONS requests)
+app.use(authToCookie);
+
+// IMPORTANT: Check your 'auth' middleware logic!
 app.use(auth);
+
 app.post("/logout", (req, res) => {
 	res.clearCookie("server_token", {
 		httpOnly: true,
