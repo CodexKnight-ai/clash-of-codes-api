@@ -36,9 +36,9 @@ const corsOptions = {
 };
 
 //  middleware
+app.use(cors(corsOptions));
 connectToDatabase();
 connectToRedis();
-app.use(cors(corsOptions));
 app.use(authToCookie);
 app.use(cookieParser());
 
