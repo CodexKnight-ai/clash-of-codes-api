@@ -43,6 +43,24 @@ app.use(authToCookie);
 app.use(cookieParser());
 
 app.use(auth);
+app.post("/logout", (req, res) => {
+	res.clearCookie("server_token", {
+		httpOnly: true,
+		secure: true,
+		sameSite: "strict",
+		path: "/"
+	});
+
+	res.clearCookie("google_token", {
+		httpOnly: true,
+		secure: true,
+		sameSite: "strict",
+		path: "/"
+	});
+
+	res.status(200).json({ success: true });
+});
+
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
