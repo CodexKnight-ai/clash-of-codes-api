@@ -1,119 +1,143 @@
 import dotenv from "dotenv";
 dotenv.config();
+
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import bodyParser from "body-parser";
+import http from "http";
+import ws from "ws";
 
 import { auth, authToCookie, verifyEnv } from "./src/util/middlewares";
 import {
-	connectToRedis,
-	getNewRedisClient,
-	getRedisClient,
+  connectToRedis,
+  getNewRedisClient,
+  getRedisClient,
 } from "./src/util/redis";
 import { connectToDatabase, getClient } from "./src/util/db";
 import router from "./src/routes";
-import bodyParser from "body-parser";
-import ws from "ws";
-import http from "http";
 import {
-	formatRatingLeaderboard,
-	getCustomRating,
-	syncData,
-	syncLeaderboardFromCF,
+  syncData,
+  syncLeaderboardFromCF,
 } from "./src/util/functions";
 
-const port = 3001;
+/* =======================
+   CONFIG
+======================= */
+
+const PORT = Number(process.env.PORT) || 3001;
+
 const corsOptions = {
-	origin: [
-		"http://localhost:3000",
-		"http://localhost:3001",
-		"https://clash-of-codes2026.vercel.app",
-		"https://clash-of-codes-api-0p6t.onrender.com",
-	],
-	credentials: true, //access-control-allow-credentials:true
-	optionSuccessStatus: 200,
+  origin: [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "https://clash-of-codes2026.vercel.app",
+    "https://clash-of-codes-api-0p6t.onrender.com",
+  ],
+  credentials: true,
+  optionSuccessStatus: 200,
 };
 
+/* =======================
+   APP SETUP
+======================= */
+
 const app = express();
+const server = http.createServer(app);
+const wss = new ws.Server({ server });
 
-// 1. Move CORS to the very top
 app.use(cors(corsOptions));
-
-// 2. Explicitly handle Preflight requests for all routes
 app.options("*", cors(corsOptions));
 
-// 3. Body parsers (needed before auth if auth checks body)
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
-
-// 4. Cookies
 app.use(cookieParser());
 
-// 5. Custom Middlewares (ensure these don't block OPTIONS requests)
-app.use(authToCookie);
+/* =======================
+   AUTH MIDDLEWARES
+======================= */
 
-// IMPORTANT: Check your 'auth' middleware logic!
+// Make sure these DO NOT block OPTIONS requests internally
+app.use(authToCookie);
 app.use(auth);
 
+/* =======================
+   ROUTES
+======================= */
+
 app.post("/logout", (req, res) => {
-	res.clearCookie("server_token", {
-		httpOnly: true,
-		secure: true,
-		sameSite: "strict",
-		path: "/"
-	});
+  res.clearCookie("server_token", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "strict",
+    path: "/",
+  });
 
-	res.clearCookie("google_token", {
-		httpOnly: true,
-		secure: true,
-		sameSite: "strict",
-		path: "/"
-	});
+  res.clearCookie("google_token", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "strict",
+    path: "/",
+  });
 
-	res.status(200).json({ success: true });
+  res.status(200).json({ success: true });
 });
-
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json());
 
 app.use("/", router);
 
-const server = http.createServer(app);
-const wss = new ws.Server({ server });
-const redisClient2 = getNewRedisClient();
-redisClient2.connect();
+/* =======================
+   REDIS + WEBSOCKETS
+======================= */
 
-redisClient2.subscribe("configHash", async (m, c) => {
-	if (c === "configHash") await syncData();
+const redisSubscriber = getNewRedisClient();
+
+(async () => {
+  await redisSubscriber.connect();
+  await redisSubscriber.subscribe("configHash", async () => {
+    await syncData();
+  });
+})();
+
+wss.on("connection", async (socket) => {
+  console.log("WebSocket connected");
+
+  const cachedData = await getRedisClient().get("leaderboard");
+  if (cachedData) socket.send(cachedData);
+
+  redisSubscriber.subscribe("live", (message) => {
+    socket.send(message);
+  });
+
+  socket.on("close", () => {
+    console.log("WebSocket disconnected");
+  });
 });
 
-wss.on("connection", async (ws) => {
-	// Handle WebSocket closure
-	console.log("WebSocket connection opened");
-	const cachedData = await getRedisClient().get("leaderboard");
-
-	if (cachedData) {
-		ws.send(cachedData);
-	}
-	ws.on("close", () => {
-		console.log("WebSocket connection closed");
-	});
-	redisClient2.subscribe("live", (m, c) => {
-		// console.log(m);
-		ws.send(m);
-	});
-});
+/* =======================
+   STARTUP SEQUENCE
+======================= */
 
 const client = getClient();
-client.on("open", async () => {
-	verifyEnv();
 
-	setInterval(async () => {
-		await syncLeaderboardFromCF();
-	}, 13000);
-	server.listen(port, () => {
-		console.log(`clash-of-codes api @ http://localhost:${port}`);
-	});
+client.on("open", async () => {
+  verifyEnv();
+
+  setInterval(async () => {
+    await syncLeaderboardFromCF();
+  }, 13000);
+
+  server.listen(PORT, () => {
+    console.log(`🚀 API running on port ${PORT}`);
+  });
 });
 
-client.close();
+/* =======================
+   GRACEFUL SHUTDOWN
+======================= */
+
+process.on("SIGTERM", async () => {
+  console.log("SIGTERM received. Shutting down...");
+  await redisSubscriber.quit();
+  await client.close();
+  process.exit(0);
+});
