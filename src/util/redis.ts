@@ -1,38 +1,54 @@
-import { createClient } from "redis";
+import { createClient } from 'redis';
 
-// Create a Redis client
-const client = createClient({
-	password: process.env.REDIS_PASS,
-	socket: {
-		host: process.env.REDIS_HOST,
-		port: 13800,
-	},
+const REDIS_CONFIG = {
+    username: 'default',
+    password: process.env.REDIS_PASS,
+    socket: {
+        host: process.env.REDIS_HOST,
+        port: Number(process.env.REDIS_PORT),
+        connectTimeout: 10000,
+    }
+};
+
+const client = createClient(REDIS_CONFIG);
+
+// 1. GLOBAL ERROR LISTENER
+// This is the most important part to prevent [nodemon] app crashed
+client.on('error', err => {
+    console.error('Core Redis Client Error:', err.message);
 });
 
-// Connect to Redis and handle connection events
-export function connectToRedis() {
-	client.connect();
-	client.on("error", (error: Error) => {
-		console.error("Failed to connect to Redis! " + error);
-	});
-	client.on("connect", () => {
-		console.log("Connected to Redis");
-	});
+export async function connectToRedis() {
+    try {
+        if (!client.isOpen) {
+            console.log("Attempting to connect to Redis...");
+            await client.connect();
+            console.log("✅ Redis connected successfully");
+        }
+    } catch (err: any) {
+        // Catching the initial connection timeout
+        console.error("❌ Redis Initial Connection Timeout:", err.message);
+        console.error("Check if your IP is whitelisted in Redis Cloud console.");
+    }
 }
 
-// Get the existing Redis client
+// Ensure connection is called
+connectToRedis();
+
 export function getRedisClient() {
-	return client;
+    return client;
 }
 
-// Create and return a new Redis client
+/**
+ * Creates a new client with its own error handling to prevent crashes
+ */
 export function getNewRedisClient() {
-	const newClient = createClient({
-		password: process.env.REDIS_PASS,
-		socket: {
-			host: process.env.REDIS_HOST,
-			port: 13800,
-		},
-	});
-	return newClient;
+    const newClient = createClient(REDIS_CONFIG);
+    
+    // EVERY new client must have its own error listener
+    newClient.on('error', err => {
+        console.error('New Instance Redis Client Error:', err.message);
+    });
+
+    return newClient;
 }

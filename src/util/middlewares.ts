@@ -27,7 +27,8 @@ export function verifyEnv() {
 	}
 	getCFSecretData();
 }
-const restricted = ["/admin", "/login"];
+// Only protect admin routes, allow login without auth
+const restricted = ["/admin"];
 
 export async function auth(req: Request, res: Response, next: NextFunction) {
 	let restricted2 = structuredClone(restricted);

@@ -5,7 +5,7 @@ import getPastScores from "./pastScores";
 import { getClans } from "./clansRanks";
 import { getClan } from "./myClan";
 const router = Router();
-router.get("/login", login);
+router.post("/login", login);
 router.use("/admin", adminRouter);
 router.get("/pastScores", getPastScores);
 router.get("/clans", getClans);
