@@ -22,7 +22,8 @@ const corsOptions = {
   origin: ["http://localhost:3000", "https://clash-of-codes2026.vercel.app","https://lb.pclub.online"],
   credentials: true,  // This is required for credentials
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization','auth','x-requested-with'],
+  exposedHeaders: ['set-cookie'],
 };
 
 // 1. GLOBAL MIDDLEWARE
