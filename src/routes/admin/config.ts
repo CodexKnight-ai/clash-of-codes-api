@@ -71,7 +71,7 @@ export async function postConfig(req: Request, res: Response) {
 	) {
 		return res
 			.status(400)
-			.send(`${contestCode} is not a valid contest code`);
+			.json({ error: `${contestCode} is not a valid contest code` });
 	}
 	contest["DateAdded"] = new Date();
 	contest["Live"] = true;
@@ -79,7 +79,7 @@ export async function postConfig(req: Request, res: Response) {
 
 	const ak = await db.collection<ContestCol>("Contests").insertOne(contest);
 	if (!ak.acknowledged) {
-		return res.status(500).send();
+		return res.status(500).json({ error: "Failed to add contest" });
 	}
 	const hash = crypto
 		.createHash("sha256")

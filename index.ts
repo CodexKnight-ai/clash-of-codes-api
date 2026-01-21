@@ -19,13 +19,10 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 const corsOptions = {
-  origin: [
-    "http://localhost:3000",
-    "http://localhost:3001",
-    "https://clash-of-codes2026.vercel.app",
-  ],
-  credentials: true,
-  optionsSuccessStatus: 200
+  origin: ["http://localhost:3000", "https://clash-of-codes2026.vercel.app","https://lb.pclub.online"],
+  credentials: true,  // This is required for credentials
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 };
 
 // 1. GLOBAL MIDDLEWARE
@@ -40,8 +37,6 @@ app.use(cookieParser());
 // 2. AUTH & ROUTES
 app.use(authToCookie);
 
-// Be careful: If 'auth' blocks requests without tokens, 
-// it will also block the frontend from reaching 'router'
 app.use(auth);
 
 app.post("/logout", (req, res) => {
