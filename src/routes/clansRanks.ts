@@ -57,6 +57,5 @@ export async function getClans(req: Request, res: Response) {
 		}
 		return res.json(clan);
 	}
-
 	return res.json(processedClanData);
 }
